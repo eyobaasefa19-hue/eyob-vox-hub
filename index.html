@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="am" class="h-full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eyob Vox Hub - የአማርኛ ድምፅ ማዕከል</title>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Google Fonts: Noto Sans Ethiopic -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+body {
+font-family: 'Noto Sans Ethiopic', sans-serif;
+}
+</style>
+</head>
+<body class="h-full bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-indigo-500 selection:text-white" x-data="voiceApp()">
+​<!-- Header Navigation -->
+<header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+<div class="flex items-center space-x-3">
+<div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+<svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"></path>
+</svg>
+</div>
+<div>
+<span class="text-lg font-bold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">eyob-vox-hub</span>
+<span class="block text-xs text-indigo-400 font-medium">የአማርኛ ድምፅ እና AI ርቆስ ማዕከል</span>
+</div>
+</div>
+​<!-- User Stats & Navigation Tabs -->
+<div class="flex items-center space-x-4">
+<div class="hidden sm:flex items-center space-x-2 bg-slate-800/60 border border-slate-700/50 px-3 py-1.5 rounded-full text-sm">
+<span class="text-amber-400 font-semibold" x-text="points + ' ነጥቦች'"></span>
+<span class="text-slate-500">|</span>
+<span class="text-slate-300 text-xs" x-text="username"></span>
+</div>
+​<nav class="flex space-x-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+<button @click="currentTab = 'record'" :class="currentTab === 'record' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all">ቀረጻ</button>
+<button @click="currentTab = 'validate'" :class="currentTab === 'validate' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all">ማረጋገጫ</button>
+<button @click="currentTab = 'dashboard'" :class="currentTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all">ዳሽቦርድ</button>
+</nav>
+</div>
+</div>
+</header>
+​<!-- Main Container -->
+<main class="max-w-4xl w-full mx-auto px-4 py-8 flex-grow flex flex-col justify-center">
+​<!-- TAB 1: RECORDING STUDIO -->
+<div x-show="currentTab === 'record'" class="space-y-6">
+<div class="text-center space-y-2">
+<h1 class="text-2xl sm:text-3xl font-bold tracking-tight">አማርኛ ድምፅዎን ይቅረጹ</h1>
+<p class="text-sm text-slate-400 max-w-lg mx-auto">ከታች የሚታየውን ዓረፍተ ነገር በግልጽ እና በተፈጥሯዊ ድምፅ በማንበብ ለኢትዮጵያ AI ልማት አስተዋጽኦ ያድርጉ።</p>
+</div>
+​<!-- Sentence Card -->
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+<div class="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
+<div class="flex justify-between items-center mb-4">
+<span class="text-xs font-semibold uppercase tracking-wider text-indigo-400 bg-indigo-500/10 px-2.5 py-1 rounded-md border border-indigo-500/20" x-text="currentDomain"></span>
+<button @click="nextSentence()" class="text-xs text-slate-400 hover:text-white flex items-center space-x-1 transition-colors">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+<span>ሌላ ዓረፍተ ነገር</span>
+</button>
+</div>
+<p class="text-xl sm:text-2xl font-medium text-slate-100 leading-relaxed text-center py-4" x-text="sentences[currentIndex]"></p>
+</div>
+​<!-- Recording Controls -->
+<div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 text-center space-y-6 backdrop-blur-sm">
+<div class="flex items-center justify-center space-x-4">
+<!-- Record Button -->
+<template x-if="!isRecording && !audioBlob">
+<button @click="startRecording()" class="relative group">
+<div class="absolute -inset-2 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-full blur opacity-75 group-hover:opacity-100 transition duration-300 animate-pulse"></div>
+<div class="relative w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-xl hover:bg-indigo-500 transition-all transform hover:scale-105">
+<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"></path></svg>
+</div>
+</button>
+</template>
+​<!-- Stop Button -->
+<template x-if="isRecording">
+<button @click="stopRecording()" class="relative group">
+<div class="absolute -inset-2 bg-rose-600 rounded-full blur opacity-75 animate-pulse"></div>
+<div class="relative w-20 h-20 bg-rose-600 rounded-full flex items-center justify-center text-white shadow-xl hover:bg-rose-500 transition-all transform hover:scale-105">
+<div class="w-7 h-7 bg-white rounded-md"></div>
+</div>
+</button>
+</template>
+</div>
+​<div class="text-sm font-medium text-slate-400">
+<span x-show="!isRecording && !audioBlob">ለመቅረጽ ማይክሮፎኑን ይጫኑ</span>
+<span x-show="isRecording" class="text-rose-400 font-semibold animate-pulse">ቀረጻ በመካሄድ ላይ ነው... (<span x-text="timer"></span>ሰ)</span>
+<span x-show="audioBlob" class="text-emerald-400 font-semibold">ቀረጻው ተጠናቋል! ማዳመጥ ወይም ማስገባት ይችላሉ።</span>
+</div>
+​<!-- Audio Player Preview & Actions -->
+<template x-if="audioBlob">
+<div class="space-y-4 pt-2 border-t border-slate-800">
+<audio :src="audioUrl" controls class="mx-auto w-full max-w-md rounded-lg"></audio>
+<div class="flex justify-center space-x-3">
+<button @click="resetRecording()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-xl transition-colors">እንደገና መቅረጽ</button>
+<button @click="submitRecording()" class="px-6 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition-all">ቀረጻውን ላክ (+10 ነጥብ)</button>
+</div>
+</div>
+</template>
+</div>
+</div>
+​<!-- TAB 2: VALIDATION STUDIO -->
+<div x-show="currentTab === 'validate'" class="space-y-6" x-cloak>
+<div class="text-center space-y-2">
+<h1 class="text-2xl sm:text-3xl font-bold tracking-tight">የድምፅ ማረጋገጫ (Validation)</h1>
+<p class="text-sm text-slate-400 max-w-lg mx-auto">ሌሎች ተጠቃሚዎች የቀረጿቸውን የአማርኛ ድምፆች በማዳመጥ ትክክለኛ መሆናቸውን ያረጋግጡ።</p>
+</div>
+​<div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
+<div class="bg-slate-950 p-4 rounded-xl border border-slate-800/80">
+<span class="text-xs text-indigo-400 font-semibold block mb-1">የቀረጻው ጽሁፍ፡</span>
+<p class="text-lg font-medium text-slate-200" x-text="validationItem.text"></p>
+</div>
+​<div class="flex flex-col items-center space-y-4">
+<audio :src="validationItem.audioUrl" controls class="w-full max-w-md"></audio>
+<div class="flex space-x-4 w-full max-w-xs pt-2">
+<button @click="voteRecording(false)" class="flex-1 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-semibold rounded-xl transition-colors">አይደለም (Reject)</button>
+<button @click="voteRecording(true)" class="flex-1 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-semibold rounded-xl transition-colors">ትክክል ነው (Approve)</button>
+</div>
+</div>
+</div>
+</div>
+​<!-- TAB 3: DASHBOARD & REWARDS -->
+<div x-show="currentTab === 'dashboard'" class="space-y-6" x-cloak>
+<div class="text-center space-y-2">
+<h1 class="text-2xl sm:text-3xl font-bold tracking-tight">የተጠቃሚ ዳሽቦርድ</h1>
+<p class="text-sm text-slate-400">የሰበሰቧቸው ነጥቦች እና የሽልማት ማስተካከያ።</p>
+</div>
+​<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+<div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center shadow-lg">
+<span class="text-xs text-slate-400 block mb-1">ጠቅላላ ነጥቦች</span>
+<span class="text-3xl font-bold text-amber-400" x-text="points"></span>
+</div>
+<div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center shadow-lg">
+<span class="text-xs text-slate-400 block mb-1">የቀረጹዋቸው ድምፆች</span>
+<span class="text-3xl font-bold text-indigo-400" x-text="recordingsCount"></span>
+</div>
+<div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl text-center shadow-lg">
+<span class="text-xs text-slate-400 block mb-1">የተረጋገጡ ድምፆች</span>
+<span class="text-3xl font-bold text-emerald-400" x-text="verifiedCount"></span>
+</div>
+</div>
+​<!-- Payout Request Section -->
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-4 shadow-xl">
+<h3 class="text-lg font-semibold text-slate-200">የቴሌብር ሽልማት መጠየቂያ</h3>
+<p class="text-xs text-slate-400">ነጥቦችዎን ወደ ቴሌብር ገንዘብ ወይም የሞባይል ካርዲ መቀየር ይችላሉ (100 ነጥብ = 50 ብር)</p>
+<div class="flex flex-col sm:flex-row gap-3 pt-2">
+<input type="text" placeholder="የቴሌብር ስልክ ቁጥር (09...)" class="flex-grow bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+<button @click="requestPayout()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-xl transition-colors shadow-lg shadow-indigo-600/30">ሽልማት ጠይቅ</button>
+</div>
+</div>
+</div>
+​</main>
+​<!-- Footer -->
+<footer class="border-t border-slate-900 py-6 text-center text-xs text-slate-500">
+<p>Eyob Vox Hub © 2026 - የተሰራው ለኢትዮጵያ ቋንቋዎች AI ምርምር እና ልማት ነው።</p>
+</footer>
+​<!-- Alpine.js Application Logic -->
+<script>
+function voiceApp() {
+return {
+currentTab: 'record',
+username: 'Eyob (Developer)',
+points: 120,
+recordingsCount: 12,
+verifiedCount: 10,
+currentDomain: 'ቴክኖሎጂ እና አጠቃላይ',
+sentences: [
+"ነገ ከአዲስ አበባ ወደ አዳማ በባቡር እንጓዛለን።",
+"የኢትዮጵያ ቴክኖሎጂ ስታርትአፖች በፈጣን ሁኔታ እያደጉ ይገኛሉ።",
+"በሰሜን ኢትዮጵያ የሚገኙት ተራሮች ውብ የተፈጥሮ ጸጋ አላቸው።",
+"ጤፍ ከግሉተን ነፃ የሆነ እና ከፍተኛ पौष्टिक (ንጥረ ነገር) ያለው እህል ነው።",
+"የሞባይል የገንዘብ ዝውውር አገልግሎቶች የንግድ ስራዎችን እጅግ አቀליለዋል።"
+],
+currentIndex: 0,
+isRecording: false,
+mediaRecorder: null,
+audioChunks: [],
+audioBlob: null,
+audioUrl: null,
+timer: 0,
+timerInterval: null,
+validationItem: {
+text: "የኢትዮጵያ ቴክኖሎጂ ስታርትአፖች በፈጣን ሁኔታ እያደጉ ይገኛሉ።",
+audioUrl: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+},
+​nextSentence() {
+this.currentIndex = (this.currentIndex + 1) % this.sentences.length;
+this.resetRecording();
+},
+​async startRecording() {
+this.audioChunks = [];
+try {
+const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+this.mediaRecorder = new MediaRecorder(stream);
+​this.mediaRecorder.ondataavailable = (event) => {
+if (event.data.size > 0) {
+this.audioChunks.push(event.data);
+}
+};
+​this.mediaRecorder.onstop = () => {
+this.audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+this.audioUrl = URL.createObjectURL(this.audioBlob);
+};
+​this.mediaRecorder.start();
+this.isRecording = true;
+this.timer = 0;
+this.timerInterval = setInterval(() => {
+this.timer++;
+}, 1000);
+} catch (err) {
+alert("ማይክሮፎን መጠቀም አልተቻለም። እባክዎ ፈቃድ ይስጡ።");
+console.error(err);
+}
+},
+​stopRecording() {
+if (this.mediaRecorder && this.isRecording) {
+this.mediaRecorder.stop();
+this.isRecording = false;
+clearInterval(this.timerInterval);
+}
+},
+​resetRecording() {
+this.audioBlob = null;
+this.audioUrl = null;
+this.timer = 0;
+},
+​submitRecording() {
+this.points += 10;
+this.recordingsCount++;
+alert("ቀረጻው በተሳካ ሁኔታ ተልኳል! 10 ነጥብ ተሸልመዋል።");
+this.nextSentence();
+},
+​voteRecording(isApproved) {
+alert(isApproved ? "ቀረጻው ጸድቋል! እናመሰግናለን።" : "ግምገማዎ ተመዝግቧል።");
+},
+​requestPayout() {
+alert("የቴሌብር የሽልማት ጥያቄዎ ደርሷል! በቅርቡ ይለቀቅልዎታል።");
+}
+}
+}
+</script>
+</body>
+</html>
