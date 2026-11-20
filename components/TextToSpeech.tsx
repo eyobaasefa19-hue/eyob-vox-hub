@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const voices = [
   { id: "am-hamen", name: "ሀመን — ሴት ድምፅ" },
@@ -19,9 +19,23 @@ export default function TextToSpeech() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  useEffect(() => {
+    return () => {
+      // The generated audio URL is hosted by the provider.
+      // It is not an object URL created by this component.
+    };
+  }, []);
+
   async function generateSpeech() {
-    if (!text.trim()) {
+    const cleanText = text.trim();
+
+    if (!cleanText) {
       setMessage("እባክህ በአማርኛ ጽሑፍ አስገባ።");
+      return;
+    }
+
+    if (cleanText.length > 3000) {
+      setMessage("ጽሑፉ ከ3000 ቁምፊዎች መብለጥ የለበትም።");
       return;
     }
 
@@ -35,13 +49,26 @@ export default function TextToSpeech() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ text, voiceId }),
+        body: JSON.stringify({ text: cleanText, voiceId }),
       });
 
-      const result = await response.json();
+      let result: { error?: string; audioUrl?: string };
+
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error("ከአገልግሎቱ ትክክለኛ ምላሽ አልተገኘም።");
+      }
 
       if (!response.ok) {
         throw new Error(result.error || "ድምፅ ማመንጨት አልተሳካም።");
+      }
+
+      if (
+        typeof result.audioUrl !== "string" ||
+        !result.audioUrl.startsWith("https://")
+      ) {
+        throw new Error("የድምፅ ፋይሉ አልተገኘም።");
       }
 
       setAudioUrl(result.audioUrl);
@@ -73,7 +100,7 @@ export default function TextToSpeech() {
           onChange={(event) => setText(event.target.value)}
           maxLength={3000}
           rows={7}
-          placeholder="ለምሳሌ፦ ሰላም፣ እንደምን አላችሁ? ወደ አማርኛ ድምፅ ማዕከላችን እንኳን በደህና መጣችሁ።"
+          placeholder="ለምሳሌ፦ ሰላም፣ እንደምን አላችሁ?"
           className="w-full rounded-xl border border-gray-300 p-4 leading-8 outline-none focus:border-teal-700"
         />
 
