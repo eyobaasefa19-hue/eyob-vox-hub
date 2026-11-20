@@ -60,7 +60,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
+    let body: { text?: unknown; voiceId?: unknown };
+
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "የተላከው መረጃ ትክክል አይደለም።" },
+        { status: 400 }
+      );
+    }
+
     const text = typeof body.text === "string" ? body.text.trim() : "";
     const voiceId =
       typeof body.voiceId === "string" ? body.voiceId : "am-hamen";
@@ -86,26 +96,45 @@ export async function POST(request: Request) {
       );
     }
 
-    const providerResponse = await fetch(
-      "https://api.addisassistant.com/api/v1/voice/generations",
-      {
-        method: "POST",
-        headers: {
-          "x-api-key": addisApiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text,
-          voice_id: voiceId,
-          language: "am",
-          output_format: "mp3_44100",
-          client_request_id: crypto.randomUUID(),
-        }),
-        cache: "no-store",
-      }
-    );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-    const result = await providerResponse.json();
+    let providerResponse: Response;
+
+    try {
+      providerResponse = await fetch(
+        "https://api.addisassistant.com/api/v1/voice/generations",
+        {
+          method: "POST",
+          headers: {
+            "x-api-key": addisApiKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+            voice_id: voiceId,
+            language: "am",
+            output_format: "mp3_44100",
+            client_request_id: crypto.randomUUID(),
+          }),
+          cache: "no-store",
+          signal: controller.signal,
+        }
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    let result: any;
+
+    try {
+      result = await providerResponse.json();
+    } catch {
+      return NextResponse.json(
+        { error: "ከድምፅ አቅራቢው ትክክለኛ ምላሽ አልተገኘም።" },
+        { status: 502 }
+      );
+    }
 
     if (!providerResponse.ok) {
       return NextResponse.json(
@@ -115,13 +144,16 @@ export async function POST(request: Request) {
             result?.message ||
             "ድምፅ ማመንጨት አልተሳካም።",
         },
-        { status: providerResponse.status }
+        { status: 502 }
       );
     }
 
     const audioUrl = result?.data?.audio_url;
 
-    if (!audioUrl) {
+    if (
+      typeof audioUrl !== "string" ||
+      !audioUrl.startsWith("https://")
+    ) {
       return NextResponse.json(
         { error: "የድምፅ ፋይሉ አልተገኘም።" },
         { status: 502 }
@@ -132,10 +164,12 @@ export async function POST(request: Request) {
       audioUrl,
       clipId: result?.data?.id ?? null,
     });
-  } catch {
-    return NextResponse.json(
-      { error: "የድምፅ ማመንጫ ጥያቄው አልተሳካም። እንደገና ሞክር።" },
-      { status: 500 }
-    );
+  } catch (error) {
+    const message =
+      error instanceof Error && error.name === "AbortError"
+        ? "የድምፅ ጥያቄው ብዙ ጊዜ ወስዷል። እንደገና ሞክር።"
+        : "የድምፅ ማመንጫ ጥያቄው አልተሳካም። እንደገና ሞክር።";
+
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
