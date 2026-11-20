@@ -20,14 +20,27 @@ export default function AudioRecorder() {
   const [seconds, setSeconds] = useState(0);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioUrlRef = useRef("");
 
-  async function loadSentence() {
-    setMessage("");
+  function clearTimer() {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
+  }
+
+  function clearAudio() {
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = "";
     setAudioUrl("");
     setAudioBlob(null);
     setSeconds(0);
+  }
+
+  async function loadSentence() {
+    setMessage("");
+    clearAudio();
 
     try {
       const supabase = createSupabaseClient();
@@ -46,11 +59,12 @@ export default function AudioRecorder() {
         return;
       }
 
-      const random = data[Math.floor(Math.random() * data.length)];
-      setSentence(random);
+      setSentence(data[Math.floor(Math.random() * data.length)]);
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "አረፍተ ነገር መጫን አልተቻለም።"
+        error instanceof Error
+          ? error.message
+          : "አረፍተ ነገር መጫን አልተቻለም።"
       );
     }
   }
@@ -59,80 +73,112 @@ export default function AudioRecorder() {
     loadSentence();
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      clearTimer();
+      if (recorderRef.current?.state === "recording") {
+        recorderRef.current.stop();
+      }
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function startRecording() {
+  async function startRecording() {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       setMessage("ይህ አሳሽ የድምፅ ቅጂን አይደግፍም። Chrome ተጠቀም።");
       return;
     }
 
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((stream) => {
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "";
+    try {
+      clearAudio();
+      setMessage("");
 
-        const recorder = new MediaRecorder(
-          stream,
-          mimeType ? { mimeType } : undefined
-        );
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
 
-        chunksRef.current = [];
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
 
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            chunksRef.current.push(event.data);
-          }
-        };
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined
+      );
 
-        recorder.onstop = () => {
-          const blob = new Blob(chunksRef.current, {
-            type: recorder.mimeType || "audio/webm",
-          });
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
 
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+
+        if (blob.size > 0) {
+          const url = URL.createObjectURL(blob);
+          audioUrlRef.current = url;
+          setAudioUrl(url);
           setAudioBlob(blob);
-          setAudioUrl(URL.createObjectURL(blob));
-          stream.getTracks().forEach((track) => track.stop());
-        };
+        } else {
+          setMessage("ድምፅ አልተቀዳም። እንደገና ሞክር።");
+        }
 
-        recorderRef.current = recorder;
-        recorder.start();
-        setRecording(true);
-        setMessage("");
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        setRecording(false);
+        clearTimer();
+      };
 
-        timerRef.current = setInterval(() => {
-          setSeconds((value) => value + 1);
-        }, 1000);
-      })
-      .catch(() => {
-        setMessage("ማይክሮፎን መጠቀም አልተፈቀደም። ፈቃድ ስጥ።");
-      });
+      recorder.onerror = () => {
+        setMessage("በድምፅ ቅጂ ላይ ስህተት ተፈጥሯል።");
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        setRecording(false);
+        clearTimer();
+      };
+
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setSeconds(0);
+
+      timerRef.current = setInterval(() => {
+        setSeconds((value) => {
+          if (value >= 599) {
+            stopRecording();
+            return 600;
+          }
+          return value + 1;
+        });
+      }, 1000);
+    } catch {
+      setMessage("ማይክሮፎን ፈቃድ አልተሰጠም። የChrome ፈቃድን አረጋግጥ።");
+    }
   }
 
   function stopRecording() {
+    clearTimer();
+
     if (recorderRef.current?.state === "recording") {
       recorderRef.current.stop();
+    } else {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setRecording(false);
     }
-
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    setRecording(false);
   }
 
   async function uploadRecording() {
-    if (!sentence || !audioBlob) return;
+    if (!sentence || !audioBlob || seconds < 1) {
+      setMessage("መጀመሪያ የድምፅ ቅጂ አድርግ።");
+      return;
+    }
 
     setLoading(true);
     setMessage("");
+
+    let filePath = "";
 
     try {
       const supabase = createSupabaseClient();
@@ -143,19 +189,15 @@ export default function AudioRecorder() {
       } = await supabase.auth.getUser();
 
       if (authError) throw authError;
-
-      if (!user) {
-        setMessage("መጀመሪያ ወደ መለያህ ግባ።");
-        return;
-      }
+      if (!user) throw new Error("መጀመሪያ ወደ መለያህ ግባ።");
 
       const extension = audioBlob.type.includes("mp4") ? "m4a" : "webm";
-      const filePath = `${user.id}/${crypto.randomUUID()}.${extension}`;
+      filePath = `${user.id}/${crypto.randomUUID()}.${extension}`;
 
       const { error: uploadError } = await supabase.storage
         .from("voice-recordings")
         .upload(filePath, audioBlob, {
-          contentType: audioBlob.type,
+          contentType: audioBlob.type || "audio/webm",
           upsert: false,
         });
 
@@ -170,21 +212,21 @@ export default function AudioRecorder() {
           status: "pending",
         });
 
-      if (insertError) {
-        await supabase.storage
-          .from("voice-recordings")
-          .remove([filePath]);
-        throw insertError;
-      }
+      if (insertError) throw insertError;
 
-      setMessage("ድምፅህ በተሳካ ሁኔታ ተልኳል። እናመሰግናለን!");
-      setAudioUrl("");
-      setAudioBlob(null);
-      setSeconds(0);
+      setMessage("ድምፅህ ተልኳል። ለማረጋገጥ ይጠብቃል።");
+      clearAudio();
       await loadSentence();
     } catch (error) {
+      if (filePath) {
+        const supabase = createSupabaseClient();
+        await supabase.storage.from("voice-recordings").remove([filePath]);
+      }
+
       setMessage(
-        error instanceof Error ? error.message : "ድምፅ መላክ አልተቻለም።"
+        error instanceof Error
+          ? error.message
+          : "ድምፅ መላክ አልተቻለም።"
       );
     } finally {
       setLoading(false);
@@ -225,7 +267,7 @@ export default function AudioRecorder() {
           <button
             onClick={startRecording}
             disabled={!sentence || loading}
-            className="rounded-xl bg-red-600 px-5 py-4 font-bold text-white"
+            className="rounded-xl bg-red-600 px-5 py-4 font-bold text-white disabled:opacity-50"
           >
             ● ቅጂ ጀምር
           </button>
@@ -243,17 +285,14 @@ export default function AudioRecorder() {
             <audio controls src={audioUrl} className="w-full" />
             <button
               onClick={uploadRecording}
-              disabled={loading}
-              className="w-full rounded-xl bg-teal-700 px-5 py-4 font-bold text-white"
+              disabled={loading || recording}
+              className="w-full rounded-xl bg-teal-700 px-5 py-4 font-bold text-white disabled:opacity-50"
             >
               {loading ? "በመላክ ላይ..." : "ድምፄን ላክ"}
             </button>
             <button
-              onClick={() => {
-                setAudioUrl("");
-                setAudioBlob(null);
-                setSeconds(0);
-              }}
+              onClick={clearAudio}
+              disabled={loading}
               className="w-full rounded-xl border border-gray-300 px-5 py-3"
             >
               ቅጂውን ሰርዝ
