@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createSupabaseClient } from "@/lib/supabaseClient";
 
 export default function VoiceEnrollment() {
@@ -20,82 +20,137 @@ export default function VoiceEnrollment() {
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioUrlRef = useRef("");
 
-  function startRecording() {
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setMessage("ይህ አሳሽ የድምፅ ቅጂን አይደግፍም። Chrome ተጠቀም።");
-      return;
-    }
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (recorderRef.current?.state === "recording") {
+        recorderRef.current.stop();
+      }
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    };
+  }, []);
 
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then((stream) => {
-        streamRef.current = stream;
-        chunksRef.current = [];
-
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "";
-
-        const recorder = new MediaRecorder(
-          stream,
-          mimeType ? { mimeType } : undefined
-        );
-
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0) chunksRef.current.push(event.data);
-        };
-
-        recorder.onstop = () => {
-          const audio = new Blob(chunksRef.current, {
-            type: recorder.mimeType || "audio/webm",
-          });
-
-          setBlob(audio);
-          setAudioUrl(URL.createObjectURL(audio));
-          stream.getTracks().forEach((track) => track.stop());
-          streamRef.current = null;
-        };
-
-        recorderRef.current = recorder;
-        recorder.start();
-        setRecording(true);
-        setSeconds(0);
-        setMessage("");
-
-        timerRef.current = setInterval(() => {
-          setSeconds((value) => value + 1);
-        }, 1000);
-      })
-      .catch(() => {
-        setMessage("ማይክሮፎን ፈቃድ አልተሰጠም።");
-      });
-  }
-
-  function stopRecording() {
-    if (recorderRef.current?.state === "recording") {
-      recorderRef.current.stop();
-    }
-
+  function stopTimer() {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
-    setRecording(false);
   }
 
   function clearRecording() {
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    stopTimer();
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = "";
     setAudioUrl("");
     setBlob(null);
     setSeconds(0);
   }
 
+  async function startRecording() {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setMessage("ይህ አሳሽ የድምፅ ቅጂን አይደግፍም። Chrome ተጠቀም።");
+      return;
+    }
+
+    try {
+      clearRecording();
+      setMessage("");
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+
+      streamRef.current = stream;
+      chunksRef.current = [];
+
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+        ? "audio/webm"
+        : "";
+
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined
+      );
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = () => {
+        const audio = new Blob(chunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+
+        if (audio.size > 0) {
+          const url = URL.createObjectURL(audio);
+          audioUrlRef.current = url;
+          setBlob(audio);
+          setAudioUrl(url);
+        } else {
+          setMessage("ድምፅ አልተቀዳም። እንደገና ሞክር።");
+        }
+
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        setRecording(false);
+        stopTimer();
+      };
+
+      recorder.onerror = () => {
+        setMessage("በድምፅ ቅጂ ላይ ስህተት ተፈጥሯል።");
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        setRecording(false);
+        stopTimer();
+      };
+
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setSeconds(0);
+
+      timerRef.current = setInterval(() => {
+        setSeconds((value) => {
+          if (value >= 599) {
+            stopRecording();
+            return 600;
+          }
+          return value + 1;
+        });
+      }, 1000);
+    } catch {
+      setMessage("ማይክሮፎን ፈቃድ አልተሰጠም። የChrome ፈቃድን አረጋግጥ።");
+    }
+  }
+
+  function stopRecording() {
+    stopTimer();
+
+    if (recorderRef.current?.state === "recording") {
+      recorderRef.current.stop();
+    } else {
+      setRecording(false);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }
+
   async function saveSample() {
     if (!name.trim() || !transcript.trim() || !blob || !consent) {
-      setMessage("ስም፣ የተነበበው ጽሑፍ፣ የድምፅ ቅጂና ፈቃድ ያስፈልጋሉ።");
+      setMessage("ስም፣ ጽሑፍ፣ የድምፅ ቅጂና ፈቃድ ያስፈልጋሉ።");
+      return;
+    }
+
+    if (seconds < 1 || seconds > 600) {
+      setMessage("የቅጂው ጊዜ ከ1 እስከ 600 ሰከንድ መሆን አለበት።");
       return;
     }
 
     setLoading(true);
     setMessage("");
+
+    let uploadedPath = "";
 
     try {
       const supabase = createSupabaseClient();
@@ -108,8 +163,6 @@ export default function VoiceEnrollment() {
       if (authError) throw authError;
       if (!user) throw new Error("መጀመሪያ ወደ መለያህ ግባ።");
 
-      let profileId: string;
-
       const { data: existing, error: lookupError } = await supabase
         .from("voice_profiles")
         .select("id")
@@ -118,20 +171,10 @@ export default function VoiceEnrollment() {
 
       if (lookupError) throw lookupError;
 
+      let profileId: string;
+
       if (existing) {
         profileId = existing.id;
-
-        const { error } = await supabase
-          .from("voice_profiles")
-          .update({
-            display_name: name.trim(),
-            consent_to_voice_cloning: true,
-            consent_at: new Date().toISOString(),
-            allow_public_use: publicUse,
-          })
-          .eq("id", profileId);
-
-        if (error) throw error;
       } else {
         const { data, error } = await supabase
           .from("voice_profiles")
@@ -150,12 +193,12 @@ export default function VoiceEnrollment() {
       }
 
       const extension = blob.type.includes("mp4") ? "m4a" : "webm";
-      const filePath = `${user.id}/${profileId}/${crypto.randomUUID()}.${extension}`;
+      uploadedPath = `${user.id}/${profileId}/${crypto.randomUUID()}.${extension}`;
 
       const { error: uploadError } = await supabase.storage
         .from("voice-training-samples")
-        .upload(filePath, blob, {
-          contentType: blob.type,
+        .upload(uploadedPath, blob, {
+          contentType: blob.type || "audio/webm",
           upsert: false,
         });
 
@@ -167,21 +210,23 @@ export default function VoiceEnrollment() {
           voice_profile_id: profileId,
           user_id: user.id,
           transcript: transcript.trim(),
-          audio_path: filePath,
+          audio_path: uploadedPath,
           duration_seconds: seconds,
         });
 
-      if (sampleError) {
-        await supabase.storage
-          .from("voice-training-samples")
-          .remove([filePath]);
-        throw sampleError;
-      }
+      if (sampleError) throw sampleError;
 
       setMessage("የድምፅ ናሙናህ ተልኳል። ለማረጋገጥ ይጠብቃል።");
       setTranscript("");
       clearRecording();
     } catch (error) {
+      if (uploadedPath) {
+        const supabase = createSupabaseClient();
+        await supabase.storage
+          .from("voice-training-samples")
+          .remove([uploadedPath]);
+      }
+
       setMessage(
         error instanceof Error ? error.message : "ድምፅ መላክ አልተቻለም።"
       );
@@ -191,8 +236,8 @@ export default function VoiceEnrollment() {
   }
 
   const time = `${Math.floor(seconds / 60)
-    .toString().padStart(2, "0")}:${(seconds % 60)
-    .toString().padStart(2, "0")}`;
+    .toString()
+    .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
 
   return (
     <section className="space-y-5 rounded-2xl bg-white p-5 shadow">
@@ -231,7 +276,7 @@ export default function VoiceEnrollment() {
         <button
           onClick={startRecording}
           disabled={loading}
-          className="w-full rounded-xl bg-red-600 p-4 font-bold text-white"
+          className="w-full rounded-xl bg-red-600 p-4 font-bold text-white disabled:opacity-50"
         >
           ● የድምፅ ቅጂ ጀምር
         </button>
