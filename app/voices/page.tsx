@@ -18,6 +18,8 @@ export default function VoicesPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    let active = true;
+
     async function loadVoices() {
       try {
         const supabase = createSupabaseClient();
@@ -30,7 +32,9 @@ export default function VoicesPage() {
         if (authError) throw authError;
 
         if (!user) {
-          setMessage("የራስህን ድምፅ ለማየት መጀመሪያ ግባ።");
+          if (active) {
+            setMessage("የራስህን ድምፅ ለማየት መጀመሪያ ግባ።");
+          }
           return;
         }
 
@@ -42,19 +46,25 @@ export default function VoicesPage() {
 
         if (error) throw error;
 
-        setVoices(data ?? []);
+        if (active) setVoices(data ?? []);
       } catch (error) {
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : "የድምፅ መረጃ መጫን አልተቻለም።"
-        );
+        if (active) {
+          setMessage(
+            error instanceof Error
+              ? error.message
+              : "የድምፅ መረጃ መጫን አልተቻለም።"
+          );
+        }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
 
     loadVoices();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   function statusLabel(status: string) {
@@ -137,7 +147,7 @@ export default function VoicesPage() {
         </div>
 
         {message && (
-          <p className="mt-5 rounded-lg bg-gray-100 p-3 text-center text-sm">
+          <p className="mt-5 break-words rounded-lg bg-gray-100 p-3 text-center text-sm">
             {message}
           </p>
         )}
