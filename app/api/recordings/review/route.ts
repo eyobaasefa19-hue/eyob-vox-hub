@@ -20,23 +20,35 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "የተሳሳተ መረጃ ተልኳል።" }, { status: 400 });
+    return NextResponse.json(
+      { error: "የተሳሳተ መረጃ ተልኳል።" },
+      { status: 400 }
+    );
   }
 
   if (
     !body.recordingId ||
     !["approved", "rejected"].includes(body.decision ?? "")
   ) {
-    return NextResponse.json({ error: "የሚፈለገው መረጃ አልተሟላም።" }, { status: 400 });
+    return NextResponse.json(
+      { error: "የሚፈለገው መረጃ አልተሟላም።" },
+      { status: 400 }
+    );
   }
 
-  const { data, error } = await supabase.rpc("review_voice_recording", {
-    p_recording_id: body.recordingId,
-    p_decision: body.decision,
-  });
+  const { data, error } = await supabase.rpc(
+    "review_community_recording",
+    {
+      p_recording_id: body.recordingId,
+      p_decision: body.decision,
+    }
+  );
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json(
+      { error: error.message },
+      { status: 400 }
+    );
   }
 
   return NextResponse.json(data);
