@@ -1,13 +1,13 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createSupabaseClient } from "@/lib/supabaseClient";
 
 type Sentence = {
   id: string;
   text_content: string;
-  domain: string | null;
+  category: string | null;
 };
 
 export default function AudioRecorder() {
@@ -24,36 +24,40 @@ export default function AudioRecorder() {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioUrlRef = useRef("");
+  const secondsRef = useRef(0);
 
-  function clearTimer() {
+  const clearTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
-  }
+  }, []);
 
-  function clearAudio() {
+  const clearAudio = useCallback(() => {
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     audioUrlRef.current = "";
     setAudioUrl("");
     setAudioBlob(null);
+    secondsRef.current = 0;
     setSeconds(0);
-  }
+  }, []);
 
-  async function loadSentence() {
+  const loadSentence = useCallback(async () => {
+    if (recording) return;
+
     setMessage("");
     clearAudio();
 
     try {
       const supabase = createSupabaseClient();
-
       const { data, error } = await supabase
-        .from("sentences")
-        .select("id, text_content, domain")
+        .from("community_sentences")
+        .select("id, text_content, category")
         .eq("language_code", "am")
+        .eq("active", true)
         .limit(100);
 
       if (error) throw error;
 
-      if (!data || data.length === 0) {
+      if (!data?.length) {
         setSentence(null);
         setMessage("አሁን የአማርኛ አረፍተ ነገር አልተገኘም።");
         return;
@@ -62,15 +66,13 @@ export default function AudioRecorder() {
       setSentence(data[Math.floor(Math.random() * data.length)]);
     } catch (error) {
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "አረፍተ ነገር መጫን አልተቻለም።"
+        error instanceof Error ? error.message : "አረፍተ ነገር መጫን አልተቻለም።"
       );
     }
-  }
+  }, [clearAudio, recording]);
 
   useEffect(() => {
-    loadSentence();
+    void loadSentence();
 
     return () => {
       clearTimer();
@@ -80,8 +82,15 @@ export default function AudioRecorder() {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // Load once when the page opens.
+
+  function stopRecording() {
+    clearTimer();
+
+    if (recorderRef.current?.state === "recording") {
+      recorderRef.current.stop();
+    }
+  }
 
   async function startRecording() {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
@@ -97,9 +106,14 @@ export default function AudioRecorder() {
       streamRef.current = stream;
       chunksRef.current = [];
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "";
+      const supportedTypes = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+      ];
+      const mimeType = supportedTypes.find((type) =>
+        MediaRecorder.isTypeSupported(type)
+      );
 
       const recorder = new MediaRecorder(
         stream,
@@ -141,36 +155,22 @@ export default function AudioRecorder() {
       recorderRef.current = recorder;
       recorder.start();
       setRecording(true);
-      setSeconds(0);
 
       timerRef.current = setInterval(() => {
-        setSeconds((value) => {
-          if (value >= 599) {
-            stopRecording();
-            return 600;
-          }
-          return value + 1;
-        });
+        secondsRef.current += 1;
+        setSeconds(secondsRef.current);
+
+        if (secondsRef.current >= 600) {
+          stopRecording();
+        }
       }, 1000);
     } catch {
       setMessage("ማይክሮፎን ፈቃድ አልተሰጠም። የChrome ፈቃድን አረጋግጥ።");
     }
   }
 
-  function stopRecording() {
-    clearTimer();
-
-    if (recorderRef.current?.state === "recording") {
-      recorderRef.current.stop();
-    } else {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      setRecording(false);
-    }
-  }
-
   async function uploadRecording() {
-    if (!sentence || !audioBlob || seconds < 1) {
+    if (!sentence || !audioBlob || secondsRef.current < 1) {
       setMessage("መጀመሪያ የድምፅ ቅጂ አድርግ።");
       return;
     }
@@ -179,10 +179,10 @@ export default function AudioRecorder() {
     setMessage("");
 
     let filePath = "";
+    let uploaded = false;
 
     try {
       const supabase = createSupabaseClient();
-
       const {
         data: { user },
         error: authError,
@@ -195,38 +195,40 @@ export default function AudioRecorder() {
       filePath = `${user.id}/${crypto.randomUUID()}.${extension}`;
 
       const { error: uploadError } = await supabase.storage
-        .from("voice-recordings")
+        .from("community-recordings")
         .upload(filePath, audioBlob, {
           contentType: audioBlob.type || "audio/webm",
           upsert: false,
         });
 
       if (uploadError) throw uploadError;
+      uploaded = true;
 
       const { error: insertError } = await supabase
-        .from("voice_recordings")
+        .from("community_recordings")
         .insert({
           sentence_id: sentence.id,
           user_id: user.id,
-          audio_url: filePath,
+          audio_path: filePath,
+          duration_seconds: secondsRef.current,
           status: "pending",
         });
 
       if (insertError) throw insertError;
 
-      setMessage("ድምፅህ ተልኳል። ለማረጋገጥ ይጠብቃል።");
+      setMessage("ድምፅህ ተልኳል። ሌላ ተጠቃሚ እስኪያረጋግጠው ይጠብቃል።");
       clearAudio();
       await loadSentence();
     } catch (error) {
-      if (filePath) {
+      if (uploaded && filePath) {
         const supabase = createSupabaseClient();
-        await supabase.storage.from("voice-recordings").remove([filePath]);
+        await supabase.storage
+          .from("community-recordings")
+          .remove([filePath]);
       }
 
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "ድምፅ መላክ አልተቻለም።"
+        error instanceof Error ? error.message : "ድምፅ መላክ አልተቻለም።"
       );
     } finally {
       setLoading(false);
@@ -249,9 +251,9 @@ export default function AudioRecorder() {
         </p>
       </div>
 
-      {sentence?.domain && (
+      {sentence?.category && (
         <p className="mt-2 text-center text-sm text-gray-500">
-          ዘርፍ፦ {sentence.domain}
+          ዘርፍ፦ {sentence.category}
         </p>
       )}
 
@@ -301,7 +303,7 @@ export default function AudioRecorder() {
         )}
 
         <button
-          onClick={loadSentence}
+          onClick={() => void loadSentence()}
           disabled={recording || loading}
           className="rounded-xl border border-teal-700 px-5 py-3 font-semibold text-teal-800"
         >
